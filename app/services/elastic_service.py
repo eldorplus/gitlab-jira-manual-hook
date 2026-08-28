@@ -23,33 +23,25 @@ class ElasticService:
         ts = timestamp or datetime.now(timezone.utc)
         return f"{self.index_prefix}-{ts:%Y.%m.%d}"
 
+    async def publish_document(self, document: dict[str, Any], timestamp: datetime | None = None) -> None:
+        try:
+            await self.client.index(index=self._index(timestamp), document=document)
+        except Exception:
+            logger.exception("failed to publish GitLab event to Elasticsearch")
+
     async def publish_job(self, job: ManualJob, event: str = "job") -> None:
         document: dict[str, Any] = {
             "@timestamp": datetime.now(timezone.utc),
-            "event": {"kind": "event", "category": "ci", "action": event},
+            "event": {"kind": "event", "category": "ci", "type": ["job"], "action": event},
             "gitlab": {
-                "project": {
-                    "id": job.project_id,
-                    "name": job.project_name,
-                    "url": job.project_web_url,
-                },
+                "project": {"id": job.project_id, "name": job.project_name, "url": job.project_web_url},
                 "pipeline": {"id": job.pipeline_id, "url": job.pipeline_url},
-                "job": {
-                    "id": job.job_id,
-                    "name": job.job_name,
-                    "stage": job.stage,
-                    "status": job.status,
-                    "url": job.job_url,
-                },
+                "job": {"id": job.job_id, "name": job.job_name, "stage": job.stage, "status": job.status, "url": job.job_url},
                 "ref": job.ref,
                 "commit": {"sha": job.commit_sha},
             },
         }
-        try:
-            await self.client.index(index=self._index(), document=document)
-        except Exception:
-            # Observability must not make GitLab webhook processing fail.
-            logger.exception("failed to publish GitLab event to Elasticsearch", extra={"job_id": job.job_id})
+        await self.publish_document(document)
 
     async def close(self) -> None:
         await self.client.close()
