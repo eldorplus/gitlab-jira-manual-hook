@@ -1,0 +1,6 @@
+{
+  "attributes": {
+    "title": "gitlab-pipelines-*",
+    "timeFieldName": "@timestamp"
+  }
+}
