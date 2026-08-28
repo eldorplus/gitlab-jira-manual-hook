@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "gitlab-jira-manual-hook"
-version = "0.2.0"
+version = "0.3.0"
 description = "Create Jira issues for GitLab CI manual actions and observe pipelines in Elasticsearch"
 requires-python = ">=3.12"
 dependencies = [
@@ -15,6 +15,8 @@ dependencies = [
   "asyncpg>=0.30,<1",
   "PyYAML>=6.0,<7",
   "elasticsearch[async]>=9,<10",
+  "SQLAlchemy>=2.0,<3",
+  "alembic>=1.16,<2",
   "opentelemetry-api>=1.36,<2",
   "opentelemetry-sdk>=1.36,<2",
   "opentelemetry-exporter-otlp-proto-grpc>=1.36,<2",
