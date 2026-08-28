@@ -11,6 +11,13 @@ spec:
     - host: gitlab-jira-hook.example.com
       http:
         paths:
+          - path: /webhook/gitlab/pipeline
+            pathType: Prefix
+            backend:
+              service:
+                name: gitlab-jira-manual-hook
+                port:
+                  number: 80
           - path: /webhook/gitlab
             pathType: Prefix
             backend:
