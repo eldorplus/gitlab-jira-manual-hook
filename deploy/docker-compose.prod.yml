@@ -9,6 +9,15 @@ services:
       postgres:
         condition: service_healthy
 
+  worker:
+    image: ghcr.io/eldorplus/gitlab-jira-manual-hook:latest
+    restart: unless-stopped
+    command: ["gitlab-jira-worker"]
+    env_file: .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   postgres:
     image: postgres:17-alpine
     restart: unless-stopped
