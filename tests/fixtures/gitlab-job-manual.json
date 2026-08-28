@@ -1,0 +1,11 @@
+{
+  "object_kind": "build",
+  "build_status": "manual",
+  "build_id": 2,
+  "build_name": "deploy_production",
+  "build_stage": "deploy",
+  "build_ref_name": "main",
+  "build_commit": {"id": "abc123"},
+  "pipeline": {"id": 1, "ref": "main"},
+  "project": {"id": 42, "name": "demo", "web_url": "https://gitlab.example/demo"}
+}

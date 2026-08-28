@@ -1,9 +1,18 @@
-# Project-specific policy. Empty by default: configure explicitly before enabling production use.
+# Production policy is opt-in. Add each GitLab project explicitly.
+defaults:
+  enabled: false
+  jira_project_key: OPS
+  jira_issue_type: Task
+  stages: []
+  jobs: []
+
 projects: {}
 
 # Example:
 # projects:
-#   my-group/my-project:
+#   "12345":
 #     enabled: true
 #     stages: [deploy, production]
 #     jobs: [deploy_production, rollback_production]
+#     jira_project_key: OPS
+#     jira_issue_type: Task

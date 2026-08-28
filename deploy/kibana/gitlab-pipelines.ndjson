@@ -1,0 +1,2 @@
+{"type":"index-pattern","id":"gitlab-pipelines","attributes":{"title":"gitlab-pipelines-*","timeFieldName":"@timestamp"},"references":[],"managed":false}
+{"type":"dashboard","id":"gitlab-ci-overview","attributes":{"title":"GitLab CI Overview","description":"GitLab pipeline health, failures and performance","panelsJSON":"[]","optionsJSON":"{\"useMargins\":true,\"syncColors\":true,\"syncCursor\":true,\"syncTooltips\":true}","version":1,"timeRestore":false,"timeFrom":"now-24h","timeTo":"now","refreshInterval":{"pause":true,"value":0}},"references":[],"managed":false}

@@ -1,0 +1,21 @@
+{
+  "object_kind": "pipeline",
+  "object_attributes": {
+    "id": 1001,
+    "status": "success",
+    "ref": "main",
+    "sha": "abc123",
+    "source": "push",
+    "url": "https://gitlab.example.com/demo/-/pipelines/1001"
+  },
+  "project": {
+    "id": 42,
+    "name": "demo",
+    "path_with_namespace": "group/demo",
+    "web_url": "https://gitlab.example.com/group/demo"
+  },
+  "user": {
+    "id": 7,
+    "username": "deploy-bot"
+  }
+}

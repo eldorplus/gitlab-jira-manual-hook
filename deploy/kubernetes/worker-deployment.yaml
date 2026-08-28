@@ -1,0 +1,35 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gitlab-jira-manual-hook-worker
+  namespace: gitlab-jira-manual-hook
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: gitlab-jira-manual-hook-worker
+  template:
+    metadata:
+      labels:
+        app: gitlab-jira-manual-hook-worker
+    spec:
+      containers:
+        - name: worker
+          image: ghcr.io/eldorplus/gitlab-jira-manual-hook:latest
+          command: ["gitlab-jira-worker"]
+          envFrom:
+            - configMapRef:
+                name: gitlab-jira-manual-hook
+            - secretRef:
+                name: gitlab-jira-manual-hook
+            - configMapRef:
+                name: gitlab-jira-manual-hook-elasticsearch
+            - secretRef:
+                name: gitlab-jira-manual-hook-elasticsearch
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi

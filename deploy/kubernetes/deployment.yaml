@@ -1,0 +1,44 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gitlab-jira-manual-hook
+  namespace: gitlab-jira-manual-hook
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: gitlab-jira-manual-hook
+  template:
+    metadata:
+      labels:
+        app: gitlab-jira-manual-hook
+    spec:
+      containers:
+        - name: app
+          image: ghcr.io/eldorplus/gitlab-jira-manual-hook:latest
+          ports:
+            - containerPort: 8000
+          envFrom:
+            - configMapRef:
+                name: gitlab-jira-manual-hook
+            - configMapRef:
+                name: gitlab-jira-manual-hook-elasticsearch
+            - secretRef:
+                name: gitlab-jira-manual-hook
+            - secretRef:
+                name: gitlab-jira-manual-hook-elasticsearch
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
