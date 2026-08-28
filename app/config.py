@@ -1,4 +1,5 @@
 from functools import lru_cache
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -16,6 +17,10 @@ class Settings(BaseSettings):
     jira_project_key: str = "OPS"
     jira_issue_type: str = "Task"
     project_config: str = "config/projects.yml"
+    elasticsearch_url: str = ""
+    elasticsearch_api_key: str = ""
+    elasticsearch_index_prefix: str = "gitlab-pipelines"
+    elasticsearch_enabled: bool = False
 
 
 @lru_cache
