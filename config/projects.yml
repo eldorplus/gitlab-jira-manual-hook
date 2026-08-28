@@ -1,0 +1,9 @@
+# Project-specific policy. Empty by default: configure explicitly before enabling production use.
+projects: {}
+
+# Example:
+# projects:
+#   my-group/my-project:
+#     enabled: true
+#     stages: [deploy, production]
+#     jobs: [deploy_production, rollback_production]
