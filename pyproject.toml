@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "gitlab-jira-manual-hook"
 version = "0.1.0"
-description = "Create Jira issues for GitLab CI jobs waiting for manual action"
+description = "Create Jira issues for GitLab CI jobs waiting for manual action and observe GitLab pipelines in Elasticsearch"
 requires-python = ">=3.12"
 dependencies = [
   "fastapi>=0.116,<1",
@@ -14,6 +14,7 @@ dependencies = [
   "pydantic-settings>=2.10,<3",
   "asyncpg>=0.30,<1",
   "PyYAML>=6.0,<7",
+  "elasticsearch[async]>=9,<10",
 ]
 
 [project.optional-dependencies]
