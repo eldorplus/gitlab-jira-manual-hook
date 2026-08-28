@@ -1,4 +1,4 @@
-.PHONY: install test run compose-up compose-down
+.PHONY: install test run compose-up compose-down lint
 
 install:
 	python -m pip install -e '.[test]'
@@ -14,3 +14,6 @@ compose-up:
 
 compose-down:
 	docker compose down
+
+lint:
+	python -m compileall app tests
