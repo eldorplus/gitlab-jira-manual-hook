@@ -21,6 +21,15 @@ class Settings(BaseSettings):
     elasticsearch_api_key: str = ""
     elasticsearch_index_prefix: str = "gitlab-pipelines"
     elasticsearch_enabled: bool = False
+    queue_enabled: bool = True
+    worker_poll_interval: float = 2.0
+    worker_batch_size: int = 10
+    worker_max_attempts: int = 5
+    worker_retry_base_seconds: int = 2
+    otel_enabled: bool = False
+    otel_service_name: str = "gitlab-jira-manual-hook"
+    otel_exporter_otlp_endpoint: str = "http://localhost:4317"
+    otel_insecure: bool = True
 
 
 @lru_cache
