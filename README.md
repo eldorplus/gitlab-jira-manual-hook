@@ -16,18 +16,7 @@ FastAPI service integrating GitLab CI, Jira and Elasticsearch/Kibana, with durab
 
 ## Architecture
 
-```text
-GitLab
- ├─ Job Hook ──> API ──> Policy ──> Idempotency ──> PostgreSQL Queue ──> Worker ──> Jira
- │                                                   │                    │
- │                                                   └── DLQ              └── retry
- │
- └─ Pipeline Hook ──> API ──> Elasticsearch ──> Kibana
-                         │
-                         └── OpenTelemetry ──> OTLP Collector
-
-PostgreSQL ──> StatefulSet + volumeClaimTemplates (Kubernetes)
-```
+![architecture-webhook-pipeline](docs/architecture-webhook-pipeline.svg)
 
 ## Features
 
