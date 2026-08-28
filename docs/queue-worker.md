@@ -2,33 +2,29 @@
 
 ## Principe
 
-Le webhook GitLab ne réalise plus l'appel Jira lorsque `QUEUE_ENABLED=true`. Il valide la policy, enregistre l'idempotence puis dépose le payload dans PostgreSQL.
+Lorsque `QUEUE_ENABLED=true`, le webhook valide la policy, enregistre l'idempotence puis dépose le payload dans PostgreSQL. L'API retourne `202 Accepted` sans attendre Jira.
 
 ```text
 GitLab → API → policy → manual_actions → webhook_queue → Worker → Jira
-                                      │
-                                      └─ retry → DLQ
+                                      │                    │
+                                      └──────── retry ─────┘
+                                                           ↓
+                                                          DLQ
 ```
 
 ## Tables
 
-`webhook_queue` contient les travaux en attente, leur nombre de tentatives, la date de disponibilité et le verrou de traitement.
+- `webhook_queue` : messages en attente/en cours.
+- `webhook_dead_letters` : messages ayant épuisé leurs tentatives.
+- `manual_actions` : idempotence et état de la synchronisation Jira.
 
-`webhook_dead_letters` conserve les travaux définitivement échoués et leur dernière erreur.
-
-Les tables sont créées automatiquement au démarrage lorsque la queue est activée.
+Les tables de queue/DLQ sont créées automatiquement lorsque la queue est activée.
 
 ## Worker
 
-Commande :
-
 ```bash
 gitlab-jira-worker
-```
-
-ou :
-
-```bash
+# ou
 python -m app.worker
 ```
 
@@ -41,32 +37,33 @@ WORKER_MAX_ATTEMPTS=5
 WORKER_RETRY_BASE_SECONDS=2
 ```
 
-Le délai de retry suit une progression exponentielle : `base * 2^attempt`.
+Le délai est `base * 2^attempt`.
 
-## Concurrence
+## Concurrence et reprise
 
-Les workers utilisent `FOR UPDATE SKIP LOCKED`. Plusieurs réplicas peuvent donc consommer la queue sans prendre le même élément. Un verrou vieux de dix minutes est récupérable pour éviter les messages bloqués après la disparition d'un worker.
+Les workers utilisent `FOR UPDATE SKIP LOCKED`. Un verrou de plus de dix minutes peut être repris afin d'éviter les messages bloqués après un crash.
 
 ## Dead-letter
 
-Après le nombre maximal de tentatives, le message est déplacé vers `webhook_dead_letters`.
+Après `WORKER_MAX_ATTEMPTS`, le message est déplacé dans `webhook_dead_letters` avec son payload et l'erreur. Il peut être réinjecté :
 
-Le service `DeadLetterService` permet de remettre un message en queue avec un compteur de tentatives réinitialisé.
+```bash
+python scripts/requeue-dlq.py <dead-letter-uuid>
+```
 
-## Production
+Le compteur de tentatives est réinitialisé.
 
-Kubernetes utilise un Deployment séparé :
+## Jira
+
+Avant création, le worker recherche `jira_issue_key`. S'il existe, l'issue est mise à jour ; sinon elle est créée. Cela limite le risque de doublons après reprise d'un traitement.
+
+## Kubernetes / Docker
+
+Le worker est séparé de l'API :
 
 ```text
 deploy/kubernetes/worker-deployment.yaml
+deploy/docker-compose.prod.yml
 ```
 
 Il peut être scalé indépendamment de l'API.
-
-## Bonnes pratiques
-
-- garder la queue sur PostgreSQL persistant ;
-- surveiller la profondeur de queue et le nombre de DLQ ;
-- conserver les erreurs sans secrets ;
-- dimensionner les workers selon le débit Jira ;
-- préférer plusieurs workers avec `SKIP LOCKED` plutôt qu'un worker unique.
