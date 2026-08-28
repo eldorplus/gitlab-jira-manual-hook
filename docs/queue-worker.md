@@ -12,13 +12,27 @@ GitLab → API → policy → manual_actions → webhook_queue → Worker → Ji
                                                           DLQ
 ```
 
+## Migrations Alembic
+
+Le schéma durable de queue/DLQ est géré par Alembic et non plus créé dynamiquement par l'application.
+
+```bash
+alembic upgrade head
+```
+
+Créer une nouvelle migration :
+
+```bash
+alembic revision -m "describe change"
+```
+
+Les migrations sont versionnées dans `alembic/versions/`. En production, exécuter `alembic upgrade head` comme étape contrôlée du déploiement, avant le rollout des replicas API/worker.
+
 ## Tables
 
 - `webhook_queue` : messages en attente/en cours.
 - `webhook_dead_letters` : messages ayant épuisé leurs tentatives.
 - `manual_actions` : idempotence et état de la synchronisation Jira.
-
-Les tables de queue/DLQ sont créées automatiquement lorsque la queue est activée.
 
 ## Worker
 
@@ -57,7 +71,7 @@ Le compteur de tentatives est réinitialisé.
 
 Avant création, le worker recherche `jira_issue_key`. S'il existe, l'issue est mise à jour ; sinon elle est créée. Cela limite le risque de doublons après reprise d'un traitement.
 
-## Kubernetes / Docker
+## Kubernetes / PostgreSQL
 
 Le worker est séparé de l'API :
 
@@ -66,4 +80,11 @@ deploy/kubernetes/worker-deployment.yaml
 deploy/docker-compose.prod.yml
 ```
 
-Il peut être scalé indépendamment de l'API.
+PostgreSQL est isolé dans un StatefulSet avec `volumeClaimTemplates` :
+
+```text
+postgres-0
+   └── postgres-data-postgres-0 (10Gi)
+```
+
+Le PVC reste associé au Pod ordinal et fournit un stockage persistant lors des recréations du Pod.
