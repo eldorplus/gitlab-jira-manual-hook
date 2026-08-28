@@ -6,6 +6,6 @@ def job():
     return ManualJob(42, "demo", "", 1, 2, "deploy_production", "deploy", "manual", "main", "abc", "", "")
 
 
-def test_empty_policy_allows():
+def test_missing_policy_is_fail_closed():
     service = PolicyService("does-not-exist.yml")
-    assert service.allowed(job()) is True
+    assert service.allowed(job()) is False
