@@ -21,8 +21,12 @@ spec:
           envFrom:
             - configMapRef:
                 name: gitlab-jira-manual-hook
+            - configMapRef:
+                name: gitlab-jira-manual-hook-elasticsearch
             - secretRef:
                 name: gitlab-jira-manual-hook
+            - secretRef:
+                name: gitlab-jira-manual-hook-elasticsearch
           readinessProbe:
             httpGet:
               path: /health
