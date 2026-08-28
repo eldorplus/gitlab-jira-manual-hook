@@ -141,29 +141,33 @@ jobs:
       - name: Checkout Wiki repository
         shell: bash
         env:
-          WIKI_URL: https://github.com/${{ github.repository }}.wiki.git
+          WIKI_URL: https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.wiki.git
         run: |
           set -euo pipefail
           if ! git ls-remote "$WIKI_URL" HEAD >/dev/null 2>&1; then
-            echo 'GitHub Wiki repository is not initialized. Create the first Wiki page once in GitHub, then rerun this workflow.'
-            exit 0
+            echo 'GitHub Wiki repository is not initialized or is not writable with GITHUB_TOKEN.'
+            echo 'Create the first Wiki page once in GitHub and ensure the workflow token has repository write access.'
+            exit 1
           fi
           git clone "$WIKI_URL" /tmp/wiki
 
       - name: Synchronize pages
         shell: bash
+        env:
+          WIKI_URL: https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.wiki.git
         run: |
           set -euo pipefail
           cp /tmp/wiki-pages/*.md /tmp/wiki/
           cd /tmp/wiki
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add '*.md'
+          git add -- '*.md'
           if git diff --cached --quiet; then
             echo 'Wiki is already up to date.'
             exit 0
           fi
           git commit -m 'docs: synchronize GitHub Wiki'
+          git remote set-url origin "$WIKI_URL"
           git push origin HEAD
 
       - name: Summary
