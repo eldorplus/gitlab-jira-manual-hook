@@ -1,25 +1,32 @@
 # GitLab Jira Manual Hook
 
-FastAPI service that integrates GitLab CI, Jira and Elasticsearch/Kibana.
+FastAPI service integrating GitLab CI, Jira and Elasticsearch/Kibana, with durable asynchronous processing and OpenTelemetry.
 
 ## What it does
 
-1. Receives GitLab **Job Hook** events and detects jobs in `manual` status.
-2. Applies an explicit, fail-closed project/stage/job policy.
-3. Uses PostgreSQL idempotency to prevent duplicate Jira issues.
-4. Creates a Jira issue through REST API v3.
-5. Receives GitLab **Pipeline Hook** events and publishes pipeline observability data to Elasticsearch for Kibana.
+1. Receives GitLab Job Hook events and detects jobs in `manual` status.
+2. Applies an explicit fail-closed project/stage/job policy.
+3. Records idempotency in PostgreSQL.
+4. Enqueues approved Jira work in a durable PostgreSQL queue.
+5. A dedicated worker creates or synchronizes Jira issues with retries and dead-letter handling.
+6. Receives GitLab Pipeline Hook events and publishes observability data to Elasticsearch.
+7. Exposes traces and metrics through OpenTelemetry/OTLP.
+8. Provides versioned Kibana saved-object assets and an automated import script.
 
 ## Architecture
 
 ```text
 GitLab
- ├─ Job Hook ────────────────> /webhook/gitlab ──> Policy ──> PostgreSQL ──> Jira
+ ├─ Job Hook ──> API ──> Policy ──> Idempotency ──> PostgreSQL Queue ──> Worker ──> Jira
+ │                                                   │                    │
+ │                                                   └── DLQ              └── retry
  │
- └─ Pipeline Hook ───────────> /webhook/gitlab/pipeline ──> Elasticsearch ──> Kibana
+ └─ Pipeline Hook ──> API ──> Elasticsearch ──> Kibana
+                         │
+                         └── OpenTelemetry ──> OTLP Collector
 ```
 
-Elasticsearch is best-effort: its unavailability must not block GitLab → Jira processing.
+Elasticsearch is best-effort. Jira processing is decoupled from the webhook request through the durable queue.
 
 ## Features
 
@@ -27,14 +34,20 @@ Elasticsearch is best-effort: its unavailability must not block GitLab → Jira 
 - `X-Gitlab-Token` authentication
 - fail-closed project/stage/job policy
 - PostgreSQL idempotency on `(project_id, pipeline_id, job_id)`
+- durable PostgreSQL async queue
+- dedicated worker process
+- exponential retry with configurable maximum attempts
+- dead-letter queue and requeue service
 - Jira REST API v3 with ADF descriptions
-- Jira retries with exponential backoff
+- Jira issue create/update synchronization
 - asynchronous `elasticsearch[async]` client
 - daily `gitlab-pipelines-YYYY.MM.DD` indexes
 - pipeline status, ref, SHA, source, timings and failure reason
 - optional jobs, stages, environment and runner metadata
+- OpenTelemetry traces and OTLP metrics
+- automated Kibana Data View and dashboard assets
 - Docker / Docker Compose
-- Kubernetes manifests
+- Kubernetes Deployment + dedicated worker + PostgreSQL StatefulSet/PVC
 - pytest tests
 - GitHub Actions CI and Docker image build
 - `/health` and `/ready` endpoints
@@ -46,19 +59,31 @@ app/
 ├── api/
 │   ├── pipeline_webhook.py
 │   └── webhook.py
+├── repositories/
+│   ├── manual_action_repository.py
+│   └── queue_repository.py
 ├── services/
+│   ├── dead_letter_service.py
 │   ├── elastic_service.py
 │   ├── gitlab_service.py
 │   ├── idempotency_service.py
 │   ├── jira_service.py
 │   ├── pipeline_observability_service.py
 │   ├── policy_service.py
+│   ├── telemetry.py
 │   └── webhook_service.py
-└── logging.py
+└── worker.py
 
 deploy/
-├── docker-compose.prod.yml
+├── kibana/
+│   ├── data-view.json
+│   ├── gitlab-pipelines.ndjson
+│   └── import.sh
 └── kubernetes/
+    ├── deployment.yaml
+    ├── worker-deployment.yaml
+    ├── postgres.yaml
+    └── ...
 
 docs/
 ├── configuration.md
@@ -68,9 +93,19 @@ docs/
 
 ## Configuration
 
-Copy `.env.example` to `.env` and configure GitLab, Jira, PostgreSQL and, when required, Elasticsearch.
+Copy `.env.example` to `.env`.
 
-Important Elasticsearch variables:
+### Queue
+
+```dotenv
+QUEUE_ENABLED=true
+WORKER_POLL_INTERVAL=2
+WORKER_BATCH_SIZE=10
+WORKER_MAX_ATTEMPTS=5
+WORKER_RETRY_BASE_SECONDS=2
+```
+
+### Elasticsearch
 
 ```dotenv
 ELASTICSEARCH_ENABLED=true
@@ -79,24 +114,23 @@ ELASTICSEARCH_API_KEY=replace-me
 ELASTICSEARCH_INDEX_PREFIX=gitlab-pipelines
 ```
 
-Enable projects explicitly in `config/projects.yml`:
+### OpenTelemetry
 
-```yaml
-projects:
-  "12345":
-    enabled: true
-    stages: [deploy]
-    jobs: [deploy_production]
+```dotenv
+OTEL_ENABLED=true
+OTEL_SERVICE_NAME=gitlab-jira-manual-hook
+OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
+OTEL_INSECURE=true
 ```
 
 ## GitLab Webhooks
 
-Configure two webhooks when both features are required:
+Configure:
 
 - **Job events** → `POST /webhook/gitlab`
 - **Pipeline events** → `POST /webhook/gitlab/pipeline`
 
-Use the same webhook token as `WEBHOOK_SECRET`.
+Use `WEBHOOK_SECRET` as the GitLab secret token.
 
 ## Local development
 
@@ -104,18 +138,12 @@ Use the same webhook token as `WEBHOOK_SECRET`.
 cp .env.example .env
 make compose-up
 make test
-curl http://localhost:8000/health
+uv run gitlab-jira-worker
 ```
 
-## Production
+The worker can also be started with the installed `gitlab-jira-worker` entrypoint.
 
-Docker Compose example:
-
-```bash
-docker compose -f deploy/docker-compose.prod.yml up -d
-```
-
-Kubernetes:
+## Kubernetes
 
 ```bash
 kubectl apply -f deploy/kubernetes/namespace.yaml
@@ -123,33 +151,36 @@ kubectl apply -f deploy/kubernetes/configmap.yaml
 kubectl apply -f deploy/kubernetes/secret.example.yaml
 kubectl apply -f deploy/kubernetes/elasticsearch-configmap.yaml
 kubectl apply -f deploy/kubernetes/elasticsearch-secret.example.yaml
+kubectl apply -f deploy/kubernetes/postgres.yaml
 kubectl apply -f deploy/kubernetes/deployment.yaml
+kubectl apply -f deploy/kubernetes/worker-deployment.yaml
 kubectl apply -f deploy/kubernetes/service.yaml
 kubectl apply -f deploy/kubernetes/ingress.yaml
 ```
 
-Replace all example secrets and hostnames before production deployment.
+PostgreSQL is isolated in a StatefulSet and persists through a PVC. Replace example secrets and hostnames before production.
 
-## Kibana
+## Kibana assets
 
-Create a Kibana Data View using:
+Import the versioned assets:
 
-```text
-gitlab-pipelines-*
+```bash
+cd deploy/kibana
+KIBANA_URL=https://kibana.example.com KIBANA_API_KEY=... ./import.sh
 ```
 
-Use `@timestamp` as the time field. Recommended dashboards are described in `docs/observability.md`.
+The Data View is `gitlab-pipelines-*` with `@timestamp` as the time field.
 
 ## Security
 
-Secrets must come from environment variables or a deployment secret store. Never commit Jira API tokens, Elasticsearch API keys or GitLab webhook secrets. Policy remains deny-by-default.
+Secrets must come from environment variables or a deployment secret store. Never commit Jira tokens, Elasticsearch API keys, webhook secrets or real Kubernetes Secrets. Policy remains deny-by-default.
 
 ## Documentation
 
-- `docs/usage.md` — installation, GitLab webhooks and operations
-- `docs/configuration.md` — environment variables and policy configuration
-- `docs/observability.md` — Elasticsearch schema and Kibana dashboards
+- `docs/usage.md` — installation, webhooks, worker and operations
+- `docs/configuration.md` — environment, queue, Jira, Elasticsearch and OpenTelemetry configuration
+- `docs/observability.md` — telemetry schema, OTLP and Kibana dashboards
 
-## Roadmap
+## Status
 
-Async queue/worker, dead-letter handling, OpenTelemetry metrics/tracing, richer Jira synchronization and automated Kibana assets.
+The V1 roadmap is implemented: asynchronous queue/worker, dead-letter handling, OpenTelemetry metrics/tracing, richer Jira synchronization and automated Kibana assets.
