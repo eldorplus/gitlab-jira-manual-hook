@@ -2,47 +2,43 @@
 
 FastAPI webhook service that creates a Jira issue when a GitLab CI job enters `manual` status.
 
-## Architecture
+## V1 architecture
 
-```text
-GitLab Job Webhook -> FastAPI -> Policy -> PostgreSQL idempotency -> Jira REST API
-```
+GitLab Job Webhook → FastAPI → authentication → project policy → PostgreSQL idempotency → Jira REST API v3.
 
-## Features (V1)
+## V1 features
 
-- GitLab Job Hook (`object_kind=build`) and `build_status=manual` detection
-- `X-Gitlab-Token` validation
+- GitLab Job Hook and `build_status=manual` detection
+- `X-Gitlab-Token` authentication
 - fail-closed project/stage/job policy
-- PostgreSQL idempotency using `(project_id, pipeline_id, job_id)`
-- Jira REST API v3 / ADF description
-- Jira retries with exponential backoff
-- Docker and Docker Compose
-- PostgreSQL schema initialization
-- pytest test suite
+- PostgreSQL idempotency on `(project_id, pipeline_id, job_id)`
+- Jira REST API v3 with ADF description
+- retry with exponential backoff
+- Docker / Docker Compose
+- PostgreSQL initialization schema
+- pytest tests
 - GitHub Actions CI and Docker build
 - health endpoint
 
 ## Configuration
 
-Copy `.env.example` to `.env` and set at least:
+Copy `.env.example` to `.env` and set `WEBHOOK_SECRET`, `JIRA_BASE_URL`, `JIRA_EMAIL`, `JIRA_API_TOKEN`, `JIRA_PROJECT_KEY`, `JIRA_ISSUE_TYPE` and `DATABASE_URL`.
 
-```text
-WEBHOOK_SECRET=<random-secret>
-JIRA_BASE_URL=https://your-domain.atlassian.net
-JIRA_EMAIL=automation@example.com
-JIRA_API_TOKEN=<token>
-JIRA_PROJECT_KEY=OPS
-JIRA_ISSUE_TYPE=Task
-DATABASE_URL=postgresql://manualhook:manualhook@postgres:5432/manualhook
+Enable projects explicitly in `config/projects.yml`:
+
+```yaml
+projects:
+  "12345":
+    enabled: true
+    stages: [deploy]
+    jobs: [deploy_production]
 ```
 
-Configure projects in `config/projects.yml`. Production is opt-in: projects must be explicitly enabled.
+## GitLab
 
-## GitLab Webhook
+Add a project or group webhook for `POST /webhook/gitlab`, enable **Job events**, and configure the same signing token as `WEBHOOK_SECRET`.
 
-In GitLab project/group settings, add a webhook targeting `POST /webhook/gitlab`, enable **Job events**, and use the same signing token as `WEBHOOK_SECRET`.
-
-## Local development
+## Local
 
 ```bash
 cp .env.example .env
@@ -53,12 +49,8 @@ make test
 
 ## Security
 
-Never commit Jira API tokens or the GitLab webhook secret. Put secrets in the deployment secret store. The policy is intentionally fail-closed so an unconfigured project cannot generate Jira tickets.
+Secrets must come from environment variables or a deployment secret store. Never commit Jira API tokens or GitLab webhook secrets. The default project policy is deny-by-default.
 
-## Future V2
+## V2 roadmap
 
-- Jira action to play a GitLab manual job
-- asynchronous queue/worker
-- dead-letter handling
-- metrics and tracing
-- Jira custom fields and templates
+Jira → GitLab `job/play`, asynchronous queue/worker, dead-letter handling, metrics/tracing, Jira custom fields/templates and richer lifecycle synchronization.
