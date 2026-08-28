@@ -1,0 +1,20 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: gitlab-jira-manual-hook
+  namespace: gitlab-jira-manual-hook
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: 1m
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: gitlab-jira-hook.example.com
+      http:
+        paths:
+          - path: /webhook/gitlab
+            pathType: Prefix
+            backend:
+              service:
+                name: gitlab-jira-manual-hook
+                port:
+                  number: 80
