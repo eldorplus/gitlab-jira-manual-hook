@@ -23,8 +23,9 @@ async def process_item(item, settings, queue: QueueRepository) -> None:
                 await queue.ack(item_id)
                 return
             repo = ManualActionRepository(settings.database_url)
-            issue = await JiraService(settings).create_or_update_issue(job)
-            await repo.set_created(job, issue)
+            issue_key = await repo.get_issue_key(job)
+            issue_key = await JiraService(settings).create_or_update_issue(job, issue_key)
+            await repo.set_created(job, issue_key)
         else:
             raise ValueError(f"unknown queue topic: {topic}")
         await queue.ack(item_id)
