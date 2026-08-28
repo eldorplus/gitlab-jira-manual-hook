@@ -19,16 +19,16 @@ class ManualJob:
 
 
 def parse_gitlab_job(payload: dict[str, Any]) -> ManualJob | None:
-    if payload.get("object_kind") != "build":
+    if payload.get("object_kind") != "build" or payload.get("build_status") != "manual":
         return None
-    if payload.get("build_status") != "manual":
-        return None
-
     project = payload.get("project") or {}
     commit = payload.get("commit") or {}
+    pipeline = payload.get("pipeline") or {}
+    if any(payload.get(k) is None for k in ("project_id", "pipeline_id", "build_id")):
+        return None
     return ManualJob(
         project_id=int(payload["project_id"]),
-        project_name=str(payload.get("project_name", project.get("name", "unknown"))),
+        project_name=str(payload.get("project_name") or project.get("name", "unknown")),
         project_web_url=str(project.get("web_url", "")),
         pipeline_id=int(payload["pipeline_id"]),
         job_id=int(payload["build_id"]),
@@ -38,5 +38,5 @@ def parse_gitlab_job(payload: dict[str, Any]) -> ManualJob | None:
         ref=str(payload.get("ref", "")),
         commit_sha=str(commit.get("id", "")),
         job_url=str(payload.get("build_url", "")),
-        pipeline_url=str((payload.get("pipeline") or {}).get("url", "")),
+        pipeline_url=str(pipeline.get("url", "")),
     )
