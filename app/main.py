@@ -7,13 +7,21 @@ from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
 from app.api.pipeline_webhook import router as pipeline_router
 from app.api.webhook import router as job_router
 from app.config import get_settings
+from app.repositories.queue_repository import QueueRepository
 from app.services.telemetry import configure_telemetry
 
 
 def create_app() -> FastAPI:
     settings = get_settings()
     configure_telemetry(settings)
-    app = FastAPI(title=settings.app_name, version="0.2.0")
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        if settings.queue_enabled:
+            await QueueRepository(settings.database_url).ensure_schema()
+        yield
+
+    app = FastAPI(title=settings.app_name, version="0.2.0", lifespan=lifespan)
     app.include_router(job_router)
     app.include_router(pipeline_router)
     if settings.otel_enabled:
