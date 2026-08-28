@@ -8,7 +8,20 @@ from app.services.webhook_service import ManualJob
 
 
 def job():
-    return ManualJob(42, "demo", "https://gitlab.example/demo", 100, 200, "deploy_production", "deploy", "main", "abc123", "https://gitlab.example/demo/-/jobs/200", "https://gitlab.example/demo/-/pipelines/100")
+    return ManualJob(
+        project_id=42,
+        project_name="demo",
+        project_web_url="https://gitlab.example/demo",
+        pipeline_id=100,
+        job_id=200,
+        job_name="deploy_production",
+        stage="deploy",
+        status="manual",
+        ref="main",
+        commit_sha="abc123",
+        job_url="https://gitlab.example/demo/-/jobs/200",
+        pipeline_url="https://gitlab.example/demo/-/pipelines/100",
+    )
 
 
 @pytest.mark.asyncio
