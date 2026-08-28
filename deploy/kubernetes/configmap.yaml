@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gitlab-jira-manual-hook
+  namespace: gitlab-jira-manual-hook
+data:
+  LOG_LEVEL: INFO
+  POLICY_FILE: /app/config/projects.yml
+  GITLAB_URL: https://gitlab.example.com
