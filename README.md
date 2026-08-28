@@ -1,6 +1,6 @@
 # GitLab Jira Manual Hook
 
-FastAPI service integrating GitLab CI, Jira and Elasticsearch/Kibana, with durable asynchronous processing and OpenTelemetry.
+FastAPI service integrating GitLab CI, Jira and Elasticsearch/Kibana, with durable asynchronous processing, versioned PostgreSQL migrations and OpenTelemetry.
 
 ## What it does
 
@@ -12,6 +12,7 @@ FastAPI service integrating GitLab CI, Jira and Elasticsearch/Kibana, with durab
 6. Receives GitLab Pipeline Hook events and publishes observability data to Elasticsearch.
 7. Exposes traces and metrics through OpenTelemetry/OTLP.
 8. Provides versioned Kibana saved-object assets and an automated import script.
+9. Manages schema changes with versioned Alembic migrations.
 
 ## Architecture
 
@@ -24,9 +25,9 @@ GitLab
  └─ Pipeline Hook ──> API ──> Elasticsearch ──> Kibana
                          │
                          └── OpenTelemetry ──> OTLP Collector
-```
 
-Elasticsearch is best-effort. Jira processing is decoupled from the webhook request through the durable queue.
+PostgreSQL ──> StatefulSet + volumeClaimTemplates (Kubernetes)
+```
 
 ## Features
 
@@ -46,50 +47,29 @@ Elasticsearch is best-effort. Jira processing is decoupled from the webhook requ
 - optional jobs, stages, environment and runner metadata
 - OpenTelemetry traces and OTLP metrics
 - automated Kibana Data View and dashboard assets
+- Alembic versioned database migrations
+- PostgreSQL 17 StatefulSet with persistent `volumeClaimTemplates`
 - Docker / Docker Compose
 - Kubernetes Deployment + dedicated worker + PostgreSQL StatefulSet/PVC
 - pytest tests
 - GitHub Actions CI and Docker image build
 - `/health` and `/ready` endpoints
 
-## Repository layout
+## Database migrations
 
-```text
-app/
-├── api/
-│   ├── pipeline_webhook.py
-│   └── webhook.py
-├── repositories/
-│   ├── manual_action_repository.py
-│   └── queue_repository.py
-├── services/
-│   ├── dead_letter_service.py
-│   ├── elastic_service.py
-│   ├── gitlab_service.py
-│   ├── idempotency_service.py
-│   ├── jira_service.py
-│   ├── pipeline_observability_service.py
-│   ├── policy_service.py
-│   ├── telemetry.py
-│   └── webhook_service.py
-└── worker.py
+Install dependencies and configure `DATABASE_URL`, then run:
 
-deploy/
-├── kibana/
-│   ├── data-view.json
-│   ├── gitlab-pipelines.ndjson
-│   └── import.sh
-└── kubernetes/
-    ├── deployment.yaml
-    ├── worker-deployment.yaml
-    ├── postgres.yaml
-    └── ...
-
-docs/
-├── configuration.md
-├── usage.md
-└── observability.md
+```bash
+alembic upgrade head
 ```
+
+Create a migration:
+
+```bash
+alembic revision -m "describe change"
+```
+
+Migrations are stored under `alembic/versions/`. Run migrations as a controlled deployment step before rolling out API/worker replicas; do not run schema creation independently in every application replica.
 
 ## Configuration
 
@@ -123,26 +103,6 @@ OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
 OTEL_INSECURE=true
 ```
 
-## GitLab Webhooks
-
-Configure:
-
-- **Job events** → `POST /webhook/gitlab`
-- **Pipeline events** → `POST /webhook/gitlab/pipeline`
-
-Use `WEBHOOK_SECRET` as the GitLab secret token.
-
-## Local development
-
-```bash
-cp .env.example .env
-make compose-up
-make test
-uv run gitlab-jira-worker
-```
-
-The worker can also be started with the installed `gitlab-jira-worker` entrypoint.
-
 ## Kubernetes
 
 ```bash
@@ -152,35 +112,23 @@ kubectl apply -f deploy/kubernetes/secret.example.yaml
 kubectl apply -f deploy/kubernetes/elasticsearch-configmap.yaml
 kubectl apply -f deploy/kubernetes/elasticsearch-secret.example.yaml
 kubectl apply -f deploy/kubernetes/postgres.yaml
+# Run Alembic upgrade head as a controlled migration step here.
 kubectl apply -f deploy/kubernetes/deployment.yaml
 kubectl apply -f deploy/kubernetes/worker-deployment.yaml
 kubectl apply -f deploy/kubernetes/service.yaml
 kubectl apply -f deploy/kubernetes/ingress.yaml
 ```
 
-PostgreSQL is isolated in a StatefulSet and persists through a PVC. Replace example secrets and hostnames before production.
-
-## Kibana assets
-
-Import the versioned assets:
-
-```bash
-cd deploy/kibana
-KIBANA_URL=https://kibana.example.com KIBANA_API_KEY=... ./import.sh
-```
-
-The Data View is `gitlab-pipelines-*` with `@timestamp` as the time field.
-
-## Security
-
-Secrets must come from environment variables or a deployment secret store. Never commit Jira tokens, Elasticsearch API keys, webhook secrets or real Kubernetes Secrets. Policy remains deny-by-default.
+PostgreSQL is isolated in a StatefulSet. Its storage is created through `volumeClaimTemplates`, giving `postgres-0` a persistent `postgres-data-postgres-0` claim.
 
 ## Documentation
 
 - `docs/usage.md` — installation, webhooks, worker and operations
 - `docs/configuration.md` — environment, queue, Jira, Elasticsearch and OpenTelemetry configuration
 - `docs/observability.md` — telemetry schema, OTLP and Kibana dashboards
+- `docs/queue-worker.md` — queue, retry, DLQ, migrations and PostgreSQL persistence
+- `docs/jira-synchronization.md` — Jira create/update lifecycle
 
 ## Status
 
-The V1 roadmap is implemented: asynchronous queue/worker, dead-letter handling, OpenTelemetry metrics/tracing, richer Jira synchronization and automated Kibana assets.
+The V1 roadmap is implemented: asynchronous queue/worker, dead-letter handling, OpenTelemetry metrics/tracing, richer Jira synchronization, automated Kibana assets, versioned Alembic migrations and persistent Kubernetes PostgreSQL storage.
