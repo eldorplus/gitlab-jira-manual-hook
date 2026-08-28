@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gitlab-jira-manual-hook-elasticsearch
+  namespace: gitlab-jira-manual-hook
+data:
+  ELASTICSEARCH_ENABLED: "true"
+  ELASTICSEARCH_INDEX_PREFIX: "gitlab-pipelines"
