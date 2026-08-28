@@ -1,160 +1,115 @@
-# Observabilité GitLab CI → Elasticsearch / Kibana
+# Observabilité GitLab CI → Elasticsearch / Kibana / OpenTelemetry
 
-## Objectif
-
-Le service collecte les événements GitLab Pipeline afin de suivre l'état, les performances et les causes d'échec des pipelines dans Kibana.
-
-## Endpoint
+## Vue d'ensemble
 
 ```text
-POST /webhook/gitlab/pipeline
+GitLab Pipeline Hook → FastAPI → Elasticsearch → Kibana
+                           │
+                           └→ OpenTelemetry → OTLP Collector → backend observability
 ```
 
-Dans GitLab, sélectionner **Pipeline events**.
+## Elasticsearch
 
-## Index
+Endpoint : `POST /webhook/gitlab/pipeline`.
 
-Les documents sont écrits dans :
+Index : `gitlab-pipelines-YYYY.MM.DD`.
+
+Data View : `gitlab-pipelines-*` avec `@timestamp`.
+
+Le document contient notamment `event.*`, `gitlab.project.*`, `gitlab.pipeline.*` et `gitlab.user.*`. Les timings, statut, source, SHA et failure reason sont conservés. Les données `jobs`, `stages`, `environment` et `runner` sont conservées lorsqu'elles sont présentes dans le webhook.
+
+## Kibana automatisé
+
+Les assets versionnés sont dans :
 
 ```text
-gitlab-pipelines-YYYY.MM.DD
+deploy/kibana/data-view.json
+deploy/kibana/gitlab-pipelines.ndjson
+deploy/kibana/import.sh
 ```
 
-Data View Kibana recommandé :
+Importer :
 
-```text
-gitlab-pipelines-*
+```bash
+cd deploy/kibana
+KIBANA_URL=https://kibana.example.com KIBANA_API_KEY=... ./import.sh
 ```
 
-Champ temporel : `@timestamp`.
+L'import utilise l'API Saved Objects de Kibana et `overwrite=true`, ce qui permet de rejouer le déploiement.
 
-## Schéma principal
+Le dashboard de base `GitLab CI Overview` est fourni comme point de départ. Les visualisations métier peuvent être versionnées dans le même NDJSON.
 
-### ECS
+## Dashboards recommandés
 
-```text
-event.kind
-event.category
-event.type
-event.action
-event.outcome
-event.reason
-@timestamp
-```
+### Pipeline overview
 
-### GitLab project
-
-```text
-gitlab.project.id
-gitlab.project.name
-gitlab.project.path_with_namespace
-gitlab.project.url
-```
-
-### Pipeline
-
-```text
-gitlab.pipeline.id
-gitlab.pipeline.status
-gitlab.pipeline.ref
-gitlab.pipeline.sha
-gitlab.pipeline.source
-gitlab.pipeline.url
-gitlab.pipeline.duration_seconds
-gitlab.pipeline.queued_duration_seconds
-gitlab.pipeline.created_at
-gitlab.pipeline.started_at
-gitlab.pipeline.finished_at
-gitlab.pipeline.failure_reason
-```
-
-### User
-
-```text
-gitlab.user.id
-gitlab.user.username
-```
-
-Lorsque GitLab les fournit, les métadonnées suivantes sont également conservées :
-
-```text
-gitlab.jobs
-gitlab.stages
-gitlab.environment
-gitlab.runner
-```
-
-## Dashboards Kibana recommandés
-
-### 1. Pipeline overview
-
-Visualisations :
-
-- nombre de pipelines
-- pipelines par statut
+- volume de pipelines
+- succès/échecs/cancellations
 - taux de succès
-- taux d'échec
-- durée moyenne
-- durée P95
-- pipelines par projet
-- pipelines par branche
+- durée moyenne/P95/P99
+- pipelines par projet, branche et source
 
-Filtres utiles :
+### Pipeline failures
 
-```text
-gitlab.project.name
- gitlab.pipeline.ref
-gitlab.pipeline.source
-gitlab.pipeline.status
-```
-
-### 2. Pipeline failures
-
-Afficher :
-
-- échecs dans le temps
-- top projets en échec
-- top branches en échec
 - `event.reason`
 - `gitlab.pipeline.failure_reason`
+- top projets/branches en échec
 - durée des pipelines échoués
 
-### 3. Performance
+### Queue / Jira
 
-Suivre :
+Surveiller côté application :
 
-- `gitlab.pipeline.duration_seconds`
-- `gitlab.pipeline.queued_duration_seconds`
-- moyenne
-- médiane
-- P95
-- P99
+- nombre d'éléments en attente
+- retries
+- DLQ
+- créations Jira
+- mises à jour Jira
+- erreurs Jira
 
-Cela permet de distinguer un problème de pipeline d'un problème de disponibilité/capacité des runners.
+## OpenTelemetry
 
-### 4. Deployment / Environment
+Configuration :
 
-Lorsque les données sont disponibles :
+```dotenv
+OTEL_ENABLED=true
+OTEL_SERVICE_NAME=gitlab-jira-manual-hook
+OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
+OTEL_INSECURE=true
+```
 
-- pipelines par environnement
-- succès/échec par environnement
-- durée des déploiements
-- runner utilisé
-- fréquence des déploiements
+### Traces
 
-### 5. Manual actions
+FastAPI et les appels HTTPX sont instrumentés. Les opérations Jira et queue disposent également de spans applicatifs.
 
-Les événements Job peuvent être corrélés avec les pipelines afin de suivre :
+Les attributs sensibles tels que tokens, mots de passe et contenu d'authentification ne doivent jamais être ajoutés aux spans.
 
-- jobs `manual`
-- tickets Jira générés
-- projets concernés
-- stages concernés
-- jobs nécessitant une validation humaine
+### Métriques
+
+Compteurs applicatifs prévus :
+
+```text
+gitlab_webhook_requests_total
+gitlab_queue_events_total
+jira_operations_total
+```
+
+Labels : statut de requête, action de queue, opération/résultat Jira.
+
+## Queue et DLQ
+
+La queue est persistante dans PostgreSQL :
+
+```text
+webhook_queue
+webhook_dead_letters
+```
+
+Les workers utilisent `FOR UPDATE SKIP LOCKED`, avec retries exponentiels et récupération des verrous expirés.
 
 ## Corrélation
 
-Les champs suivants peuvent servir de clés de corrélation :
+Utiliser :
 
 ```text
 gitlab.project.id
@@ -163,7 +118,7 @@ gitlab.pipeline.sha
 gitlab.pipeline.ref
 ```
 
-Pour le parcours Job → Jira, utiliser également :
+et, pour les jobs manuels :
 
 ```text
 gitlab.job.id
@@ -173,12 +128,8 @@ gitlab.job.stage
 
 ## Résilience
 
-La publication Elasticsearch est best-effort. Une panne du cluster Elasticsearch ne doit pas empêcher la création d'un ticket Jira pour un job manuel autorisé.
+Une panne Elasticsearch ne bloque pas les traitements métier. Une panne Jira est absorbée par la queue, puis retryée avant passage en DLQ.
 
 ## Rétention
 
-La rotation quotidienne des index permet d'appliquer ensuite une politique ILM adaptée aux besoins de conservation. Le projet ne fournit pas de politique ILM imposée afin de laisser la durée de rétention au contexte d'exploitation.
-
-## Sécurité
-
-Utiliser une API key Elasticsearch avec les droits minimaux nécessaires à l'indexation. Ne jamais placer cette clé dans le repository ou dans un document Elasticsearch.
+Les index quotidiens facilitent l'application d'une ILM adaptée à l'environnement. La durée de rétention reste une décision d'exploitation.
