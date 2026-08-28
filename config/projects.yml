@@ -1,4 +1,10 @@
-# Project-specific policy. Empty by default: configure explicitly before enabling production use.
+defaults:
+  enabled: true
+  jira_project_key: OPS
+  jira_issue_type: Task
+  stages: []
+  jobs: []
+
 projects: {}
 
 # Example:
@@ -7,3 +13,5 @@ projects: {}
 #     enabled: true
 #     stages: [deploy, production]
 #     jobs: [deploy_production, rollback_production]
+#     jira_project_key: OPS
+#     jira_issue_type: Task
