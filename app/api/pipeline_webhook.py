@@ -1,4 +1,5 @@
 import hmac
+
 from fastapi import APIRouter, Header, HTTPException, Request, Response
 
 from app.config import get_settings
@@ -13,6 +14,7 @@ async def gitlab_pipeline_webhook(request: Request, x_gitlab_token: str | None =
     settings = get_settings()
     if not x_gitlab_token or not hmac.compare_digest(x_gitlab_token, settings.webhook_secret):
         raise HTTPException(status_code=401, detail="Invalid GitLab webhook token")
+
     try:
         payload = await request.json()
     except ValueError as exc:
@@ -28,6 +30,8 @@ async def gitlab_pipeline_webhook(request: Request, x_gitlab_token: str | None =
         settings.elasticsearch_index_prefix,
         settings.elasticsearch_api_key or None,
     )
-    await PipelineObservabilityService(elastic).publish(payload)
-    await elastic.close()
+    try:
+        await PipelineObservabilityService(elastic).publish(payload, elastic)
+    finally:
+        await elastic.close()
     return Response(status_code=204)
