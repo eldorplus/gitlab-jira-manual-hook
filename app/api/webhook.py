@@ -4,6 +4,7 @@ from fastapi import APIRouter, Header, HTTPException, Request, Response
 
 from app.config import get_settings
 from app.repositories.manual_action_repository import ManualActionRepository
+from app.services.elastic_service import ElasticService
 from app.services.jira_service import JiraService
 from app.services.policy_service import PolicyService
 from app.services.webhook_service import parse_gitlab_job
@@ -23,7 +24,20 @@ async def gitlab_webhook(request: Request, x_gitlab_token: str | None = Header(d
         raise HTTPException(status_code=400, detail="Invalid JSON payload") from exc
 
     job = parse_gitlab_job(payload)
-    if job is None or not PolicyService(settings.project_config).allowed(job):
+    if job is None:
+        return Response(status_code=204)
+
+    # Elasticsearch is best-effort: observability must never block GitLab.
+    if settings.elasticsearch_enabled and settings.elasticsearch_url:
+        elastic = ElasticService(
+            settings.elasticsearch_url,
+            settings.elasticsearch_index_prefix,
+            settings.elasticsearch_api_key or None,
+        )
+        await elastic.publish_job(job, event="manual")
+        await elastic.close()
+
+    if not PolicyService(settings.project_config).allowed(job):
         return Response(status_code=204)
 
     repo = ManualActionRepository(settings.database_url)
