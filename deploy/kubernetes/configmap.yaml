@@ -5,5 +5,14 @@ metadata:
   namespace: gitlab-jira-manual-hook
 data:
   LOG_LEVEL: INFO
-  POLICY_FILE: /app/config/projects.yml
+  PROJECT_CONFIG: /app/config/projects.yml
   GITLAB_URL: https://gitlab.example.com
+  QUEUE_ENABLED: "true"
+  WORKER_POLL_INTERVAL: "2"
+  WORKER_BATCH_SIZE: "10"
+  WORKER_MAX_ATTEMPTS: "5"
+  WORKER_RETRY_BASE_SECONDS: "2"
+  OTEL_ENABLED: "false"
+  OTEL_SERVICE_NAME: gitlab-jira-manual-hook
+  OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+  OTEL_INSECURE: "true"
