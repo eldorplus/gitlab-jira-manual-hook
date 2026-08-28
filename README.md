@@ -16,7 +16,6 @@ GitLab Job Webhook -> FastAPI -> Policy -> PostgreSQL idempotency -> Jira REST A
 - PostgreSQL idempotency using `(project_id, pipeline_id, job_id)`
 - Jira REST API v3 / ADF description
 - Jira retries with exponential backoff
-- structured application logging
 - Docker and Docker Compose
 - PostgreSQL schema initialization
 - pytest test suite
@@ -41,13 +40,7 @@ Configure projects in `config/projects.yml`. Production is opt-in: projects must
 
 ## GitLab Webhook
 
-In GitLab project/group settings, add a webhook targeting:
-
-```text
-POST /webhook/gitlab
-```
-
-Enable **Job events** and use the same signing token as `WEBHOOK_SECRET`.
+In GitLab project/group settings, add a webhook targeting `POST /webhook/gitlab`, enable **Job events**, and use the same signing token as `WEBHOOK_SECRET`.
 
 ## Local development
 
@@ -58,7 +51,7 @@ curl http://localhost:8000/health
 make test
 ```
 
-## Security notes
+## Security
 
 Never commit Jira API tokens or the GitLab webhook secret. Put secrets in the deployment secret store. The policy is intentionally fail-closed so an unconfigured project cannot generate Jira tickets.
 
