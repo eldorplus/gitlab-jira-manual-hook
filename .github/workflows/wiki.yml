@@ -1,0 +1,177 @@
+name: Wiki
+
+on:
+  push:
+    branches:
+      - feature/v1
+      - main
+    paths:
+      - 'README.md'
+      - 'AGENTS.md'
+      - 'docs/**'
+      - 'wiki/**'
+      - '.github/workflows/wiki.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  sync-wiki:
+    name: Synchronize GitHub Wiki
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Prepare Wiki pages
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/wiki-pages
+          mkdir -p /tmp/wiki-pages
+
+          if [ -d wiki ] && find wiki -maxdepth 1 -type f -name '*.md' | grep -q .; then
+            cp wiki/*.md /tmp/wiki-pages/
+          else
+            cat > /tmp/wiki-pages/Home.md <<'EOF'
+          # GitLab Jira Manual Hook
+
+          GitLab Jira Manual Hook integrates GitLab CI manual jobs, Jira and Elasticsearch/Kibana.
+
+          ## Documentation
+
+          - [Getting Started](Getting-Started)
+          - [Architecture](Architecture)
+          - [Configuration](Configuration)
+          - [GitLab Webhooks](GitLab-Webhooks)
+          - [Jira Integration](Jira-Integration)
+          - [Async Queue and Worker](Async-Queue-and-Worker)
+          - [Dead Letter Queue](Dead-Letter-Queue)
+          - [PostgreSQL and Alembic](PostgreSQL-and-Alembic)
+          - [Elasticsearch](Elasticsearch)
+          - [Kibana](Kibana)
+          - [OpenTelemetry](OpenTelemetry)
+          - [Security](Security)
+          - [Operations](Operations)
+          - [Troubleshooting](Troubleshooting)
+          - [Development](Development)
+          - [Roadmap](Roadmap)
+          EOF
+
+            cat > /tmp/wiki-pages/Architecture.md <<'EOF'
+          # Architecture
+
+          ```text
+          GitLab Job/Pipeline Webhooks
+                    |
+                  FastAPI
+                    |
+             Policy / Idempotency
+                    |
+               PostgreSQL
+              Queue + DLQ
+                    |
+                  Worker
+                    |
+                  Jira
+
+          Pipeline events --> Elasticsearch --> Kibana
+          API/Worker --------> OpenTelemetry --> OTLP Collector
+          ```
+
+          The API handles ingestion and validation. Jira processing is asynchronous and durable. PostgreSQL provides idempotency, queue persistence and dead-letter handling.
+          EOF
+
+            cat > /tmp/wiki-pages/Configuration.md <<'EOF'
+          # Configuration
+
+          Copy `.env.example` to `.env` for local development.
+
+          ## Queue
+
+          ```dotenv
+          QUEUE_ENABLED=true
+          WORKER_POLL_INTERVAL=2
+          WORKER_BATCH_SIZE=10
+          WORKER_MAX_ATTEMPTS=5
+          WORKER_RETRY_BASE_SECONDS=2
+          ```
+
+          ## Elasticsearch
+
+          ```dotenv
+          ELASTICSEARCH_ENABLED=true
+          ELASTICSEARCH_URL=https://elasticsearch.example.com:443
+          ELASTICSEARCH_API_KEY=replace-me
+          ELASTICSEARCH_INDEX_PREFIX=gitlab-pipelines
+          ```
+
+          ## OpenTelemetry
+
+          ```dotenv
+          OTEL_ENABLED=true
+          OTEL_SERVICE_NAME=gitlab-jira-manual-hook
+          OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
+          OTEL_INSECURE=true
+          ```
+          EOF
+
+            cat > /tmp/wiki-pages/Operations.md <<'EOF'
+          # Operations
+
+          ## Database migrations
+
+          Run Alembic as a controlled deployment step:
+
+          ```bash
+          alembic upgrade head
+          ```
+
+          Do not execute migrations independently from every API/worker replica.
+
+          ## Kubernetes
+
+          PostgreSQL runs as a StatefulSet with persistent storage through `volumeClaimTemplates`. The API and worker are separate deployments.
+          EOF
+          fi
+
+      - name: Checkout Wiki repository
+        shell: bash
+        env:
+          WIKI_URL: https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.wiki.git
+        run: |
+          set -euo pipefail
+          if ! git ls-remote "$WIKI_URL" HEAD >/dev/null 2>&1; then
+            echo 'GitHub Wiki repository is not initialized or is not writable with GITHUB_TOKEN.'
+            echo 'Create the first Wiki page once in GitHub and ensure the workflow token has repository write access.'
+            exit 1
+          fi
+          git clone "$WIKI_URL" /tmp/wiki
+
+      - name: Synchronize pages
+        shell: bash
+        env:
+          WIKI_URL: https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.wiki.git
+        run: |
+          set -euo pipefail
+          cp /tmp/wiki-pages/*.md /tmp/wiki/
+          cd /tmp/wiki
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- '*.md'
+          if git diff --cached --quiet; then
+            echo 'Wiki is already up to date.'
+            exit 0
+          fi
+          git commit -m 'docs: synchronize GitHub Wiki'
+          git remote set-url origin "$WIKI_URL"
+          git push origin HEAD
+
+      - name: Summary
+        run: |
+          echo '## Wiki synchronization' >> "$GITHUB_STEP_SUMMARY"
+          echo '' >> "$GITHUB_STEP_SUMMARY"
+          echo 'The repository documentation has been synchronized to the GitHub Wiki.' >> "$GITHUB_STEP_SUMMARY"
